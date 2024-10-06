@@ -1,80 +1,86 @@
-#include "raylib.h"
-#include "rlimgui.h"
-#include "imgui.h"
+#include "world.hpp"
+#include "player.hpp"
 
-#include <chrono>
-#include <iostream>
+#include "raylib.h"
+
+#define RLIGHTS_IMPLEMENTATION
+#include "rlights.hpp"
+
+#include<chrono>
+#include<iostream>
 
 using namespace std::chrono_literals;
 
+static bool IN_GAME = false;
+
 int main()
 {
-	InitWindow(1280, 720, "Voxel Game");
-	SetTargetFPS(0);
-	rlImGuiSetup(true);
+	World world;
+	Player player;
 
-	ImGuiIO &io = ImGui::GetIO();
-	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	SetConfigFlags(FLAG_VSYNC_HINT | FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | FLAG_WINDOW_MAXIMIZED);
+	InitWindow(1280, 720, "Minecraft");
 
-	Camera camera{
-		{ 1.0f, 1.0f, 1.0f },
-		{ 0.0f, 0.0f, 0.0f },
-		{ 0.0f, 0.0f, 1.0f },
-		90.0f,
-		CAMERA_ORTHOGRAPHIC
-	};
+	Shader shader = LoadShader(R"(C:\Users\Ben\CLionProjects\Voxel\vertex_shader.txt)", R"(C:\Users\Ben\CLionProjects\Voxel\fragment_shader.txt)");
+	shader.locs[SHADER_LOC_VECTOR_VIEW] = GetShaderLocation(shader, "viewPos");
+	int ambientLocation = GetShaderLocation(shader, "ambient");
+	float shaderValue[4] = { 0.1f, 0.1f, 0.1f, 0.1f };
+	SetShaderValue(shader, ambientLocation, shaderValue, SHADER_UNIFORM_VEC4);
 
-	RenderTexture2D target = LoadRenderTexture(GetRenderWidth(), GetRenderHeight());
-	SetTextureFilter(target.texture, TEXTURE_FILTER_BILINEAR);
-
-	unsigned frames = 0U;
-	auto time = std::chrono::steady_clock::now();
+	Light lights[MAX_LIGHTS] = { 0 };
+	lights[0] = CreateLight(LIGHT_POINT, (Vector3){ -2, 1, -2 }, Vector3Zero(), YELLOW, shader);
+	lights[1] = CreateLight(LIGHT_POINT, (Vector3){ 2, 1, 2 }, Vector3Zero(), RED, shader);
+	lights[2] = CreateLight(LIGHT_POINT, (Vector3){ -2, 1, 2 }, Vector3Zero(), GREEN, shader);
+	lights[3] = CreateLight(LIGHT_POINT, (Vector3){ 2, 1, -2 }, Vector3Zero(), BLUE, shader);
+	lights[0].enabled = true;
+	lights[1].enabled = true;
+	lights[2].enabled = true;
+	lights[3].enabled = true;
 
 	while (!WindowShouldClose())
 	{
-		frames++;
-		auto now = std::chrono::steady_clock::now();
-
-		if (now - time > 1s)
+		if (IsKeyPressed(KEY_TAB))
 		{
-			std::cout << "fps: " << frames << '\r' << std::flush;
-			frames = 0U;
-			time = now;
+			IN_GAME = false;
+			EnableCursor();
 		}
+		else if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+		{
+			IN_GAME = true;
+			DisableCursor();
+		}
+
+		if (IN_GAME)
+		{
+			player.Update();
+		}
+
+		float cameraPos[3] = { player.GetCamera().position.x, player.GetCamera().position.y, player.GetCamera().position.z };
+		SetShaderValue(shader, shader.locs[SHADER_LOC_VECTOR_VIEW], cameraPos, SHADER_UNIFORM_VEC3);
+		for (int i = 0; i < MAX_LIGHTS; i++) UpdateLightValues(shader, lights[i]);
 
 		BeginDrawing();
 		{
-			BeginTextureMode(target);
 			ClearBackground(SKYBLUE);
+			BeginMode3D(player.GetCamera());
 			{
-				BeginMode3D(camera);
+				BeginShaderMode(shader);
 				{
 					DrawGrid(100, 1.0f);
-					DrawCube(
-						{ 0.0f, 0.0f, 0.0f },
-						1.0f, 1.0f, 1.0f, GREEN
-					);
-				}
-				EndMode3D();
-			}
-			EndTextureMode();
-		}
-		{
-			rlImGuiBegin();
-			{
-				ImGui::DockSpaceOverViewport(ImGui::GetMainViewport());
-				if (ImGui::Begin("Viewport"))
-				{
-					rlImGuiImageRenderTexture(&target);
-					ImGui::End();
+
+					for (const auto &block : world.GetBlocks())
+					{
+						DrawCube(block.position, 1.0f, 1.0f, 1.0f, block.colour);
+					}
 				}
 			}
-			rlImGuiEnd();
+			EndMode3D();
+			DrawFPS(10, 10);
 		}
 		EndDrawing();
 	}
 
-	rlImGuiShutdown();
+	UnloadShader(shader);
 	CloseWindow();
 	return EXIT_SUCCESS;
 }

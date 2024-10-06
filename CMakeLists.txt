@@ -66,6 +66,10 @@ endif()
 ########################################################################################################################
 add_executable(${PROJECT_NAME}
         main.cpp
+        world.hpp
+        block.hpp
+        player.hpp
+        rlights.hpp
 )
 target_link_libraries(${PROJECT_NAME}
         raylib
